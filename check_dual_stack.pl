@@ -179,7 +179,7 @@ sub parse_cmd {
 
     # Assumes we don't want to specify -4 or -6 options, check_ping doesn't seem to need this
     # will check other plugins. Ignore whitespace on either side of those options.
-    $cmd_opts =~ s/\s+-[46]\s+/ /g;
+    $cmd_opts =~ s/(\s|^)+-[46](\s|$)//g;
 
     return "$new_cmd $cmd_opts";
 }
