@@ -7,7 +7,7 @@ use Net::DNS;
 
 
 my $plugin_name = "Nagios check_dual_stack";
-my $VERSION = "1.00";
+my $VERSION = "1.01";
 
 
 # getopt module config
@@ -19,6 +19,7 @@ use constant EXIT_OK            => 0;
 use constant EXIT_WARNING       => 1;
 use constant EXIT_CRITICAL      => 2;
 use constant EXIT_UNKNOWN       => 3;
+
 # set default state
 my $status = EXIT_UNKNOWN;
 
@@ -35,7 +36,9 @@ my $debug = $opts{d};
 my @ipv6 = get_addresses($hostname, "AAAA");
 my @ipv4 = get_addresses($hostname, "A");
 my @addresses = (@ipv4,@ipv6);
-my @exit_codes = qw();
+my @exit_code_array = ();
+my %exit_codes = ();
+my %exit_code_names = (0, "OK", 1, "WARNING", 2, "CRITICAL", 3, "UNKNOWN");
 
 
 
@@ -46,22 +49,27 @@ foreach my $address (@addresses) {
 
     system($new_cmd);
     my($exit_code) = ($? >> 8);
-    push(@exit_codes, $exit_code);
+    $exit_codes{$address} = $exit_code;
+    push(@exit_code_array, $exit_code);
 
     if($debug) { print "Exit code: $exit_code\n"; }
 }
 
 # exit with most severe exit code
-if ( grep { $_ eq EXIT_CRITICAL} @exit_codes ){
+if ( grep { $_ eq EXIT_CRITICAL} @exit_code_array ){
+    print_codes();
     exit EXIT_CRITICAL;
 }
-elsif ( grep { $_ eq EXIT_WARNING} @exit_codes ){
+elsif ( grep { $_ eq EXIT_WARNING} @exit_code_array ){
+    print_codes();
     exit EXIT_WARNING;
 }
-elsif ( grep { $_ eq EXIT_UNKNOWN} @exit_codes ){
+elsif ( grep { $_ eq EXIT_UNKNOWN} @exit_code_array ){
+    print_codes();
     exit EXIT_UNKNOWN;
 }
-elsif (@exit_codes == grep { $_ eq EXIT_OK } @exit_codes) {
+elsif (@exit_code_array == grep { $_ eq EXIT_OK } @exit_code_array) {
+    print_codes();
     # all equal EXIT_OK
     exit EXIT_OK;
 }
@@ -74,6 +82,13 @@ else {
 
 
 # END MAIN, BEGIN SUBS
+sub print_codes {
+    my($ip_address, $exit_code);
+    while (($ip_address, $exit_code) = each(%exit_codes)){
+        print "($ip_address $exit_code_names{$exit_code}) ";
+    }
+}
+
 sub get_addresses {
     my ($hostname, $record_type) = @_;
 
@@ -181,5 +196,13 @@ sub parse_cmd {
     # will check other plugins. Ignore whitespace on either side of those options.
     $cmd_opts =~ s/(\s|^)+-[46](\s|$)//g;
 
-    return "$new_cmd $cmd_opts";
+    unless($debug) {
+        # When not debugging, we must not output results from
+        # command, otherwise we get a multi-line return
+        # which Nagios will reject
+        return "$new_cmd $cmd_opts > /dev/null 2>&1"
+    } else {
+        return "$new_cmd $cmd_opts";
+    }
+
 }
