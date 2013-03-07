@@ -16,7 +16,7 @@ OPTIONS
 -H      Hostname to resolve A and AAAA DNS records
 -C      Nagios check command to execute
 -A      Arguments for Nagios check command, must include HOSTNAME (not $HOSTNAME$)
--d      Display debugging information, command executed, exit code returned
+-d      Display debugging information, command executed, exit code returned (optional)
 --help      shows this message
 --version   shows version information
 
