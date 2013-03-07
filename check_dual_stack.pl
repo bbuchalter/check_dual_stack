@@ -7,10 +7,7 @@ use Net::DNS;
 
 
 my $plugin_name = "Nagios check_dual_stack";
-my $VERSION = "1.01";
-
-
-# getopt module config
+my $VERSION = "1.02";
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
 
 
@@ -20,81 +17,91 @@ use constant EXIT_WARNING       => 1;
 use constant EXIT_CRITICAL      => 2;
 use constant EXIT_UNKNOWN       => 3;
 
+
 # set default state
 my $status = EXIT_UNKNOWN;
 
 
-#parse arguments
+# parse arguments
 my %opts;
 getopts('H:C:A:d', \%opts);
 check_usage();
 
+
+# initialize vars
 my $hostname = $opts{H};
 my $cmd = $opts{C};
 my $cmd_args = $opts{A};
 my $debug = $opts{d};
-my @ipv6 = get_addresses($hostname, "AAAA");
-my @ipv4 = get_addresses($hostname, "A");
-my @addresses = (@ipv4,@ipv6);
-my @exit_code_array = ();
-my %exit_codes = ();
+my @exit_codes = ();
+my %cmd_results = ();
 my %exit_code_names = (0, "OK", 1, "WARNING", 2, "CRITICAL", 3, "UNKNOWN");
 
 
+# retrieve DNS records
+my @ipv6 = get_addresses($hostname, "AAAA");
+my @ipv4 = get_addresses($hostname, "A");
+my @addresses = (@ipv4,@ipv6);
+
 
 foreach my $address (@addresses) {
+
+    # Combine command and command arguments, sub HOSTADDRESS with DNS A and AAAA records
     my($new_cmd) = parse_cmd($cmd, $cmd_args, $address);
 
-    if($debug) { print "Executing $new_cmd\n"; }
 
-    system($new_cmd);
-    my($exit_code) = ($? >> 8);
-    $exit_codes{$address} = $exit_code;
-    push(@exit_code_array, $exit_code);
+    if($debug) { print "Executing $new_cmd\n" }
 
-    if($debug) { print "Exit code: $exit_code\n"; }
+
+    # Record command results
+    my($output) = `$new_cmd 2>&1`;
+    my($exit_code) = ($? >> 8);   # offset exit code by 8
+    $cmd_results{$address} = $output;
+    push(@exit_codes, $exit_code);
+
+
+    if($debug) { print "Exit code: $exit_code\n" }
+    if($debug) { print "Captured output: $output\n" }
 }
 
-# exit with most severe exit code
-if ( grep { $_ eq EXIT_CRITICAL} @exit_code_array ){
-    print_codes();
-    exit EXIT_CRITICAL;
-}
-elsif ( grep { $_ eq EXIT_WARNING} @exit_code_array ){
-    print_codes();
-    exit EXIT_WARNING;
-}
-elsif ( grep { $_ eq EXIT_UNKNOWN} @exit_code_array ){
-    print_codes();
-    exit EXIT_UNKNOWN;
-}
-elsif (@exit_code_array == grep { $_ eq EXIT_OK } @exit_code_array) {
-    print_codes();
-    # all equal EXIT_OK
-    exit EXIT_OK;
-}
-else {
-    exit EXIT_UNKNOWN;
-}
-
-
-
-
-
+exit_and_print_results();
 # END MAIN, BEGIN SUBS
-sub print_codes {
-    my($ip_address, $exit_code);
-    while (($ip_address, $exit_code) = each(%exit_codes)){
-        print "($ip_address $exit_code_names{$exit_code}) ";
+
+sub exit_and_print_results {
+    # exit with most severe exit code
+    if (grep { $_ eq EXIT_CRITICAL} @exit_codes) {
+        $status = EXIT_CRITICAL;
     }
+    elsif (grep { $_ eq EXIT_WARNING} @exit_codes) {
+        $status = EXIT_WARNING;
+    } 
+    elsif (grep { $_ eq EXIT_UNKNOWN} @exit_codes) {
+        $status = EXIT_UNKNOWN;
+    }
+    elsif (@exit_codes == grep { $_ eq EXIT_OK } @exit_codes) { 
+        $status = EXIT_OK 
+    }
+    else { 
+        $status = EXIT_UNKNOWN 
+    }
+
+    print_results();
+    exit $status;
+}
+
+
+sub print_results {
+    my($ip_address, $output);
+    while (($ip_address, $output) = each(%cmd_results)) { print "$ip_address $output" }
+    print "\n";
 }
 
 sub get_addresses {
     my ($hostname, $record_type) = @_;
-
     my @addresses;
     my $res   = Net::DNS::Resolver->new;
     my $query = $res->search($hostname, $record_type);
+
 
     if ($query) {
         foreach my $rr ($query->answer) {
@@ -110,7 +117,7 @@ sub get_addresses {
 
 
 sub HELP_MESSAGE {
-        print <<EOHELP
+    print <<EOHELP
 
 SUMMARY
 Given a hostname and Nagios check command, execute check command
@@ -134,11 +141,8 @@ EOHELP
 
 
 sub VERSION_MESSAGE {
-    print <<EOVM
-$plugin_name v.$VERSION
-Copyright 2013, Brian Buchalter, http://www.endpoint.com - Licensed under GPLv2
-EOVM
-;
+    print "$plugin_name v.$VERSION\n";
+    print "Copyright 2013, Brian Buchalter, http://www.endpoint.com - Licensed under GPLv2\n";
 }
 
 sub check_usage {
@@ -195,14 +199,6 @@ sub parse_cmd {
     # Assumes we don't want to specify -4 or -6 options, check_ping doesn't seem to need this
     # will check other plugins. Ignore whitespace on either side of those options.
     $cmd_opts =~ s/(\s|^)+-[46](\s|$)//g;
-
-    unless($debug) {
-        # When not debugging, we must not output results from
-        # command, otherwise we get a multi-line return
-        # which Nagios will reject
-        return "$new_cmd $cmd_opts > /dev/null 2>&1"
-    } else {
-        return "$new_cmd $cmd_opts";
-    }
-
+    
+    return "$new_cmd $cmd_opts";
 }
