@@ -1,4 +1,4 @@
-#!/usr/bin/env perl
+#!/usr/local/bin/perl -w
 
 use warnings;
 use strict;
@@ -92,8 +92,45 @@ sub exit_and_print_results {
 
 sub print_results {
     my($ip_address, $output);
-    while (($ip_address, $output) = each(%cmd_results)) { print "$ip_address $output" }
-    print "\n";
+    while (($ip_address, $output) = each(%cmd_results)) { 
+
+      my($formatted_output) = format_output($output);
+
+      print "[$ip_address: $formatted_output] ";
+    }
+}
+
+sub format_output {
+    # In Nagios, response text up to the first pipe ("|") is stored in $SERVICEOUPUT$.
+    # Subsequent text is considered performance data and thus stored in $SERVICEPERFDATA$.
+    # If there is a new line in the performance data, all text following the new line is stored in $LONGSERVICEOUTPUT$.
+    # Additionally there is a 4 KB limit on the response (but that can be configured).
+    #
+    # Because each response may have performance data,  we must strip out this perf data.
+    # Or only the first output was captured in $SERVICEOUTPUT$ with everything else captured into $PERFDATA$ and $LONGSERVICEOUTPUT$ (which I'm not even sure is shown).
+    #
+    # My strategy for dealing with this was to simply strip out the performance data. 
+    # While it might be possible to reorganize the output to retain it, it didn't seem like an essential requirement.
+    # Pull requests welcome!
+    my($output);
+    ($output) = @_;
+    $output = strip_perf_data($output);
+    trim($output);
+}
+
+
+sub trim($)
+{
+    my $string = shift;
+    $string =~ s/^\s+//;
+    $string =~ s/\s+$//;
+    return $string;
+}
+
+sub strip_perf_data {
+    my($output);
+    ($output) = @_;
+    (split q{\|}, $output)[0]
 }
 
 sub get_addresses {
