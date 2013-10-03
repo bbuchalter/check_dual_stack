@@ -43,6 +43,11 @@ my @ipv6 = get_addresses($hostname, "AAAA");
 my @ipv4 = get_addresses($hostname, "A");
 my @addresses = (@ipv4,@ipv6);
 
+if (!((@ipv6) || (@ipv4)))
+{
+    print "UNKNOWN: The specified host could not be looked up in DNS.\n";
+    exit EXIT_UNKNOWN;
+}
 
 foreach my $address (@addresses) {
 
